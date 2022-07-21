@@ -31,7 +31,7 @@ async function setTrueRating() {
 
         if (trackAvgDiv) {
             if (trueRating !== trueRatingFromServer) {
-                await setRatingToServer(albumId);
+                await setRatingToServer(albumId, trueRating, ratingCount);
             }
         } else {
             [trueRating, ratingCount] = [trueRatingFromServer, ratingCountFromServer]
@@ -41,7 +41,7 @@ async function setTrueRating() {
     }
 }
 
-async function setRatingToServer(albumId) {
+async function setRatingToServer(albumId, trueRating, ratingCount) {
     const rawResponse = await fetch(`http://localhost:3000/release/${albumId}`, {
         method: 'POST',
         headers: {
