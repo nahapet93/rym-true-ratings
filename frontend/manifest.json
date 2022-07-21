@@ -1,0 +1,13 @@
+{
+  "name": "RateYourMusic True Ratings",
+  "description": "RateYourMusic album ratings based on song ratings",
+  "version": "1.0",
+  "manifest_version": 3,
+  "permissions": ["scripting"],
+  "content_scripts": [
+    {
+      "matches": ["https://*.rateyourmusic.com/*"],
+      "js": ["script.js"]
+    }
+  ]
+}
