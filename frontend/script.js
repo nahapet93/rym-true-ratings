@@ -42,20 +42,30 @@ async function setTrueRating() {
 }
 
 async function setRatingToServer(albumId, trueRating, ratingCount) {
-    const rawResponse = await fetch(`http://localhost:3000/release/${albumId}`, {
-        method: 'POST',
-        headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({trueRating, ratingCount})
-    });
+    let rawResponse = {};
+    try {
+        rawResponse = await fetch(`http://localhost:3000/release/${albumId}`, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({trueRating, ratingCount})
+        });
+    } catch (error) {
+        return rawResponse;
+    }
 
     await rawResponse.json();
 }
 
 async function getRatingFromServer(albumId) {
-    const response = await fetch(`http://localhost:3000/release/${albumId}`);
+    let response = {};
+    try {
+        respone = await fetch(`http://localhost:3000/release/${albumId}`);
+    } catch (error) {
+        return response;
+    }
 
     if (response.ok) {
         return await response.json();
