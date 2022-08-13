@@ -5,46 +5,76 @@ if (document.readyState === 'loading') {
 }
 
 function afterDOMLoaded() {
-    setTrueRating();
+    setAlbumPageTrueRating();
+    setArtistPageTrueRating();
 }
 
-async function setTrueRating() {
-    const albumId = +document.querySelector('.album_shortcut').value.match(/\d+/)[0];
-    let trueRatingFromServer, ratingCountFromServer;
+async function setAlbumPageTrueRating() {
+    const shortcutElem = document.querySelector('.album_shortcut');
 
-    const avgSpan = document.querySelector('.avg_rating');
-    const trackAvgDiv = document.querySelector('.track_rating_avg');
+    if (shortcutElem) {
+        const albumId = +shortcutElem.value.match(/\d+/)[0];
+        let trueRatingFromServer, ratingCountFromServer;
 
-    if (avgSpan) {
-        const ratingTr = avgSpan.closest('tr');
-        const [fromStr, , ratingsStr] = ratingTr.querySelector('.num_ratings').innerText.split(' ');
-        const rating = +avgSpan.innerText;
-        let trueRating, ratingCount;
+        const avgSpan = document.querySelector('.avg_rating');
+        const trackAvgDiv = document.querySelector('.track_rating_avg');
 
-        if (trackAvgDiv) {
-            [trueRating, ratingCount] = calculateTrueRating();
-        }
+        if (avgSpan) {
+            const ratingTr = avgSpan.closest('tr');
+            const [fromStr, , ratingsStr] = ratingTr.querySelector('.num_ratings').innerText.split(' ');
+            const rating = +avgSpan.innerText;
+            let trueRating, ratingCount;
 
-        const serverData = await getRatingFromServer(albumId);
-        trueRatingFromServer = serverData ? +serverData['avg_rating'] : 0;
-        ratingCountFromServer = serverData ? +serverData['rating_count'] : 0;
-
-        if (trackAvgDiv) {
-            if (trueRating !== trueRatingFromServer) {
-                await setRatingToServer(albumId, trueRating, ratingCount);
+            if (trackAvgDiv) {
+                [trueRating, ratingCount] = calculateTrueRating();
             }
-        } else {
-            [trueRating, ratingCount] = [trueRatingFromServer, ratingCountFromServer]
-        }
 
-        changeHtml(trueRating, rating, ratingCount, fromStr, ratingsStr, ratingTr);
+            const serverData = await getRatingFromServer(albumId);
+            trueRatingFromServer = serverData ? +serverData['avg_rating'] : 0;
+            ratingCountFromServer = serverData ? +serverData['rating_count'] : 0;
+
+            if (trackAvgDiv) {
+                if (trueRating !== trueRatingFromServer) {
+                    await setRatingToServer(albumId, trueRating, ratingCount);
+                }
+            } else {
+                [trueRating, ratingCount] = [trueRatingFromServer, ratingCountFromServer]
+            }
+
+            if (ratingCount) {
+                changeReleasePageHtml(trueRating, rating, ratingCount, fromStr, ratingsStr, ratingTr);
+            }
+        }
+    }
+}
+
+async function setArtistPageTrueRating() {
+    const releaseElems = document.querySelectorAll('.disco_release');
+
+    if (releaseElems.length) {
+        const ids = [];
+        releaseElems.forEach(elem => {
+            const id = elem.id.match(/\d+/)[0];
+            ids.push(id);
+        });
+
+        const serverData = await getAllRatingsFromServer(ids);
+
+        releaseElems.forEach(elem => {
+            const id = +elem.id.match(/\d+/)[0];
+
+            if (serverData.some(releaseInfo => releaseInfo['release_id'] === id)) {
+                const trueRating = serverData.find(releaseInfo => releaseInfo['release_id'] === id)['avg_rating'];
+                changeArtistPageHtml(serverData, elem, trueRating);
+            }
+        });
     }
 }
 
 async function setRatingToServer(albumId, trueRating, ratingCount) {
     let rawResponse = {};
     try {
-        rawResponse = await fetch(`http://localhost:3000/release/${albumId}`, {
+        rawResponse = await fetch(`https://rym-true-ratings-backend.herokuapp.com/release/${albumId}`, {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
@@ -62,7 +92,7 @@ async function setRatingToServer(albumId, trueRating, ratingCount) {
 async function getRatingFromServer(albumId) {
     let response = {};
     try {
-        respone = await fetch(`http://localhost:3000/release/${albumId}`);
+        response = await fetch(`https://rym-true-ratings-backend.herokuapp.com/release/${albumId}`);
     } catch (error) {
         return response;
     }
@@ -70,7 +100,22 @@ async function getRatingFromServer(albumId) {
     if (response.ok) {
         return await response.json();
     } else {
-        alert("HTTP error: " + response.status);
+        console.log("HTTP error: " + response.status);
+    }
+}
+
+async function getAllRatingsFromServer(ids) {
+    let response = {};
+    try {
+        response = await fetch(`https://rym-true-ratings-backend.herokuapp.com/releases/${ids}`);
+    } catch (error) {
+        return response;
+    }
+
+    if (response.ok) {
+        return await response.json();
+    } else {
+        console.log("HTTP error: " + response.status);
     }
 }
 
@@ -83,7 +128,6 @@ function calculateTrueRating() {
         const trackRatingDiv = ratingLi.querySelector('.track_rating_avg');
 
         if (trackRatingDiv) {
-            console.log(trackRatingDiv.getAttribute('data-tiptip'))
             const arr = trackRatingDiv.getAttribute('data-tiptip').split(' ');
             const [rating, , count] = arr.map(parseFloat);
 
@@ -96,13 +140,13 @@ function calculateTrueRating() {
     return [avg, countSum];
 }
 
-function changeHtml(trueRating, rating, ratingCount, fromStr, ratingsStr, ratingTr) {
+function changeReleasePageHtml(trueRating, rating, ratingCount, fromStr, ratingsStr, ratingTr) {
     const diff = (trueRating * 100 - rating * 100) / rating;
     const newTr = document.createElement('tr');
     newTr.innerHTML = `<th class="info_hdr">True RYM Rating</th><td colspan="2" style="padding:4px;">
                          <span>
                            <span class="avg_rating">
-                              ${trueRating}
+                              ${trueRating.toFixed(2)}
                            </span>
                            <span class="max_rating">/ <span>5.0</span><span style="display:none">0.5</span></span>
                            <span class="num_ratings">
@@ -112,4 +156,17 @@ function changeHtml(trueRating, rating, ratingCount, fromStr, ratingsStr, rating
                         </td>`;
 
     ratingTr.parentNode.insertBefore(newTr, ratingTr.nextSibling);
+}
+
+function changeArtistPageHtml(serverData, elem, trueRating) {
+    const ratingDiv = elem.querySelector('.disco_avg_rating');
+    const rating = +ratingDiv.innerText;
+
+    const diff = (trueRating * 100 - rating * 100) / rating;
+
+    const newDiv = document.createElement('div');
+    newDiv.title = `${diff > 0 ? '+' : ''}${diff.toFixed(2)}%`;
+    newDiv.innerHTML = trueRating.toFixed(2);
+    ratingDiv.style.lineHeight = '1.24em';
+    ratingDiv.append(newDiv);
 }

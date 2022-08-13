@@ -3,11 +3,7 @@ dotenv.config();
 
 const Pool = require('pg').Pool;
 const pool = new Pool({
-    user: process.env.DATABASE_USER,
-    host: process.env.DATABASE_HOST,
-    database: process.env.DATABASE_NAME,
-    password: process.env.DATABASE_PASSWORD,
-    port: process.env.DATABASE_PORT,
+    connectionString: process.env.DATABASE_URL,
     ssl: {
         rejectUnauthorized: false
     }
@@ -27,6 +23,26 @@ const getRatingByRelease = (request, response) => {
             res = results.rows[0];
         } else {
             res = {avg_rating: 0, rating_count: 0};
+        }
+
+        response.status(200).json(res);
+    });
+};
+
+const getRatingsByReleases = (request, response) => {
+    const ids = request.params.id.split(',').map(Number);
+
+    pool.query('SELECT * FROM ratings WHERE release_id = ANY($1::int[])', [ids], (error, results) => {
+        if (error) {
+            throw error;
+        }
+
+        let res;
+
+        if (results.rows[0]) {
+            res = results.rows;
+        } else {
+            res = [{avg_rating: 0, rating_count: 0}];
         }
 
         response.status(200).json(res);
@@ -62,5 +78,6 @@ const setRatingByRelease = (request, response) => {
 
 module.exports = {
     getRatingByRelease,
+    getRatingsByReleases,
     setRatingByRelease
 };
