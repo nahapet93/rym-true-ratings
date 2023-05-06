@@ -1,15 +1,21 @@
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', afterDOMLoaded);
+    document.addEventListener('DOMContentLoaded', initRatings);
 } else {
-    afterDOMLoaded();
+    initRatings();
 }
 
-function afterDOMLoaded() {
-    setAlbumPageTrueRating();
-    setArtistPageTrueRating();
+function initRatings() {
+    chrome.storage.sync.get(
+        'isWeighted',
+        function (value) {
+            const isWeighted = value && value.isWeighted ? value.isWeighted : false;
+            setAlbumPageTrueRating(isWeighted);
+            setArtistPageTrueRating(isWeighted);
+        }
+    );
 }
 
-async function setAlbumPageTrueRating() {
+async function setAlbumPageTrueRating(isWeighted = false) {
     const shortcutElem = document.querySelector('.album_shortcut');
 
     if (shortcutElem) {
@@ -26,16 +32,16 @@ async function setAlbumPageTrueRating() {
             let trueRating, ratingCount;
 
             if (trackAvgDiv) {
-                [trueRating, ratingCount] = calculateTrueRating();
+                [trueRating, ratingCount] = calculateTrueRating(isWeighted);
             }
 
             const serverData = await getRatingFromServer(albumId);
-            trueRatingFromServer = serverData ? +serverData['avg_rating'] : 0;
+            trueRatingFromServer = serverData ? (isWeighted ? +serverData['weighted_avg_rating'] : +serverData['avg_rating']) : 0;
             ratingCountFromServer = serverData ? +serverData['rating_count'] : 0;
 
             if (trackAvgDiv) {
                 if (trueRating !== trueRatingFromServer) {
-                    await setRatingToServer(albumId, trueRating, ratingCount);
+                    await setRatingToServer(albumId, trueRating, ratingCount, isWeighted);
                 }
             } else {
                 [trueRating, ratingCount] = [trueRatingFromServer, ratingCountFromServer]
@@ -48,7 +54,7 @@ async function setAlbumPageTrueRating() {
     }
 }
 
-async function setArtistPageTrueRating() {
+async function setArtistPageTrueRating(isWeighted = false) {
     const releaseElems = document.querySelectorAll('.disco_release');
 
     if (releaseElems.length) {
@@ -63,24 +69,31 @@ async function setArtistPageTrueRating() {
         releaseElems.forEach(elem => {
             const id = +elem.id.match(/\d+/)[0];
 
-            if (serverData.some(releaseInfo => releaseInfo['release_id'] === id)) {
-                const trueRating = serverData.find(releaseInfo => releaseInfo['release_id'] === id)['avg_rating'];
+            if (serverData.some(function (releaseInfo) {
+                return releaseInfo['release_id'] === id
+                    && ((isWeighted && releaseInfo['weighted_avg_rating'])
+                        || (!isWeighted && releaseInfo['avg_rating']));
+            })) {
+                const serverRating = serverData.find(releaseInfo => releaseInfo['release_id'] === id);
+                const trueRating = isWeighted ? serverRating['weighted_avg_rating'] : serverRating['avg_rating'];
                 changeArtistPageHtml(serverData, elem, trueRating);
             }
         });
     }
 }
 
-async function setRatingToServer(albumId, trueRating, ratingCount) {
+async function setRatingToServer(albumId, trueRating, ratingCount, isWeighted = false) {
     let rawResponse = {};
+    const field = isWeighted ? 'weighted_avg_rating' : 'avg_rating';
+
     try {
-        rawResponse = await fetch(`https://rym-true-ratings-backend.herokuapp.com/release/${albumId}`, {
+        rawResponse = await fetch(`http://localhost:3000/release/${albumId}`, {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({trueRating, ratingCount})
+            body: JSON.stringify({trueRating, ratingCount, field})
         });
     } catch (error) {
         return rawResponse;
@@ -92,7 +105,7 @@ async function setRatingToServer(albumId, trueRating, ratingCount) {
 async function getRatingFromServer(albumId) {
     let response = {};
     try {
-        response = await fetch(`https://rym-true-ratings-backend.herokuapp.com/release/${albumId}`);
+        response = await fetch(`http://localhost:3000/release/${albumId}`);
     } catch (error) {
         return response;
     }
@@ -107,7 +120,7 @@ async function getRatingFromServer(albumId) {
 async function getAllRatingsFromServer(ids) {
     let response = {};
     try {
-        response = await fetch(`https://rym-true-ratings-backend.herokuapp.com/releases/${ids}`);
+        response = await fetch(`http://localhost:3000/releases/${ids}`);
     } catch (error) {
         return response;
     }
@@ -119,25 +132,31 @@ async function getAllRatingsFromServer(ids) {
     }
 }
 
-function calculateTrueRating() {
+function calculateTrueRating(isWeighted = false) {
     const songRatingLis = document.querySelectorAll('#tracks li');
     let ratingSum = 0;
+    let ratingDurationSum = 0;
     let countSum = 0;
+    let countDurationSum = 0;
 
     songRatingLis.forEach(ratingLi => {
         const trackRatingDiv = ratingLi.querySelector('.track_rating_avg');
+        const durationDiv = ratingLi.querySelector('.tracklist_duration');
 
-        if (trackRatingDiv) {
+        if (trackRatingDiv && (!isWeighted || durationDiv)) {
             const arr = trackRatingDiv.getAttribute('data-tiptip').split(' ');
             const [rating, , count] = arr.map(parseFloat);
+            const duration = durationDiv.getAttribute('data-inseconds');
 
             ratingSum += rating * count;
+            ratingDurationSum += rating * count * duration;
             countSum += count;
+            countDurationSum += count * duration;
         }
     });
 
-    const avg = countSum === 0 ? 0 : +((ratingSum / countSum).toFixed(2));
-    return [avg, countSum];
+    const avg = countSum === 0 ? 0 : (isWeighted ? ratingDurationSum / countDurationSum : ratingSum / countSum);
+    return [+(avg.toFixed(2)), countSum];
 }
 
 function changeReleasePageHtml(trueRating, rating, ratingCount, fromStr, ratingsStr, ratingTr) {
